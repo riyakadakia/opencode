@@ -1,0 +1,16 @@
+{
+	"name": "Node.js with Bun",
+	"image": "mcr.microsoft.com/devcontainers/javascript-node:1-18-bullseye",
+	"customizations": {
+		"vscode": {
+			"extensions": ["streetsidesoftware.code-spell-checker"]
+		}
+	},
+	"portsAttributes": {
+		"3000": {
+			"label": "Application",
+			"onAutoForward": "notify"
+		}
+	},
+	"postCreateCommand": "/bin/bash -c 'curl -fsSL https://bun.sh/install | bash && export PATH=\"$HOME/.bun/bin:$PATH\" && bun install'"
+}
