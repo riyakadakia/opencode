@@ -1,8 +1,9 @@
-import { For, Show, createSignal, onMount, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { For, Show, onMount, splitProps, type ComponentProps, type JSX } from "solid-js"
 import { FileIcon } from "../../components/file-icon"
 import { useI18n } from "../../context/i18n"
-import { useFilteredList } from "../../hooks"
 import { ButtonV2 } from "./button-v2"
+import { useMentionHandler } from "../components/useMentionHandler"
+import { handleMentionKeyDown } from "../components/keyboardHandlers"
 import "./line-comment-v2.css"
 
 /** Horizontal “more” glyph for the display-card overflow control (Figma outline-dots). */
@@ -89,7 +90,6 @@ function pathDirectory(path: string) {
 export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
   const i18n = useI18n()
   let textareaRef: HTMLTextAreaElement | undefined
-  const [mentionOpen, setMentionOpen] = createSignal(false)
 
   const [local, rest] = splitProps(props, [
     "heading",
@@ -108,80 +108,13 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
     "classList",
   ])
 
+  const { mentionOpen, closeMention, selectMention, mention, syncMention, selectActiveMention } = useMentionHandler(
+    () => textareaRef,
+    local,
+  )
+
   const heading = () => local.heading ?? i18n.t("ui.lineComment.submit")
   const canSubmit = () => local.value.trim().length > 0
-
-  const closeMention = () => {
-    setMentionOpen(false)
-    mention.clear()
-  }
-
-  const currentMention = () => {
-    const textarea = textareaRef
-    if (!textarea) return
-    if (!local.mention) return
-    if (textarea.selectionStart !== textarea.selectionEnd) return
-
-    const end = textarea.selectionStart
-    const match = textarea.value.slice(0, end).match(/@(\S*)$/)
-    if (!match) return
-
-    return {
-      query: match[1] ?? "",
-      start: end - match[0].length,
-      end,
-    }
-  }
-
-  function selectMention(item: { path: string } | undefined) {
-    if (!item) return
-
-    const textarea = textareaRef
-    const query = currentMention()
-    if (!textarea || !query) return
-
-    const value = `${textarea.value.slice(0, query.start)}@${item.path} ${textarea.value.slice(query.end)}`
-    const cursor = query.start + item.path.length + 2
-
-    local.onInput(value)
-    closeMention()
-
-    requestAnimationFrame(() => {
-      textarea.focus()
-      textarea.setSelectionRange(cursor, cursor)
-    })
-  }
-
-  const mention = useFilteredList<{ path: string }>({
-    items: async (query) => {
-      if (!local.mention) return []
-      if (!query.trim()) return []
-      const paths = await local.mention.items(query)
-      return paths.map((path) => ({ path }))
-    },
-    key: (item) => item.path,
-    filterKeys: ["path"],
-    skipFilter: () => true,
-    onSelect: selectMention,
-  })
-
-  const syncMention = () => {
-    const item = currentMention()
-    if (!item) {
-      closeMention()
-      return
-    }
-
-    setMentionOpen(true)
-    mention.onInput(item.query)
-  }
-
-  const selectActiveMention = () => {
-    const items = mention.flat()
-    if (items.length === 0) return
-    const active = mention.active()
-    selectMention(items.find((item) => item.path === active) ?? items[0])
-  }
 
   const submit = () => {
     const v = local.value.trim()
@@ -193,6 +126,8 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
     if (local.autofocus === false) return
     requestAnimationFrame(() => textareaRef?.focus())
   })
+
+  
 
   return (
     <div
@@ -223,41 +158,12 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
             onSelect={() => syncMention()}
             onKeyDown={(e) => {
               e.stopPropagation()
-              if (e.isComposing || e.keyCode === 229) return
-
-              if (mentionOpen()) {
-                if (e.key === "Escape") {
-                  e.preventDefault()
-                  closeMention()
-                  return
-                }
-
-                if (e.key === "Tab") {
-                  if (mention.flat().length === 0) return
-                  e.preventDefault()
-                  selectActiveMention()
-                  return
-                }
-
-                const nav = e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Enter"
-                const ctrlNav = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === "n" || e.key === "p")
-                if ((nav || ctrlNav) && mention.flat().length > 0) {
-                  mention.onKeyDown(e)
-                  e.preventDefault()
-                  return
-                }
-              }
-
-              if (e.key === "Escape") {
-                e.preventDefault()
-                e.currentTarget.blur()
-                local.onCancel()
-                return
-              }
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault()
-                submit()
-              }
+              handleMentionKeyDown(e, mentionOpen(), mention, {
+                closeMention,
+                selectActiveMention,
+                submit,
+                onCancel: local.onCancel,
+              })
             }}
           />
           <Show when={mentionOpen() && mention.flat().length > 0}>
